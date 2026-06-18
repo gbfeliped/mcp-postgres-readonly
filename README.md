@@ -27,6 +27,8 @@ Read-only PostgreSQL MCP server for Claude Desktop (and any MCP-compatible clien
 
 ## Environment variables
 
+### PostgreSQL connection
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `PG_HOST` | ✅ | — | Server hostname or IP |
@@ -36,6 +38,20 @@ Read-only PostgreSQL MCP server for Claude Desktop (and any MCP-compatible clien
 | `PG_PORT` | | `5432` | TCP port |
 | `PG_SSL` | | `false` | Enable SSL (`true`/`false`) |
 | `PG_SSL_REJECT_UNAUTHORIZED` | | `true` | Reject self-signed certs |
+
+### SSH tunnel (optional)
+
+Set `PG_SSH_HOST` to activate the tunnel. Authentication requires either a private key file or a password.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PG_SSH_HOST` | — | — | SSH server hostname (activates tunnel when set) |
+| `PG_SSH_PORT` | | `22` | SSH server port |
+| `PG_SSH_USER` | ✅ (if tunnel) | — | SSH username |
+| `PG_SSH_PRIVATE_KEY` | ✅ or password | — | Path to private key file (e.g. `~/.ssh/id_rsa`) |
+| `PG_SSH_KEY_PASSPHRASE` | | — | Passphrase for the private key (if encrypted) |
+| `PG_SSH_PASSWORD` | ✅ or key | — | SSH password (used when no key file is provided) |
+| `PG_SSH_REMOTE_HOST` | | `PG_HOST` | Postgres host as seen from the SSH server |
 
 ## Build
 
@@ -48,6 +64,7 @@ npm run build
 
 Add to `%APPDATA%\Claude\claude_desktop_config.json`:
 
+**Conexão direta:**
 ```json
 {
   "mcpServers": {
@@ -64,3 +81,67 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json`:
   }
 }
 ```
+
+**Conexão direta com SSL (certificado auto-assinado):**
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "node",
+      "args": ["C:/Projetos/mcp-postgres-readonly/dist/index.js"],
+      "env": {
+        "PG_HOST": "db.example.com",
+        "PG_DATABASE": "mydb",
+        "PG_USER": "postgres",
+        "PG_PASSWORD": "yourpassword",
+        "PG_SSL": "true",
+        "PG_SSL_REJECT_UNAUTHORIZED": "false"
+      }
+    }
+  }
+}
+```
+
+**Via SSH tunnel (private key):**
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "node",
+      "args": ["C:/Projetos/mcp-postgres-readonly/dist/index.js"],
+      "env": {
+        "PG_HOST": "localhost",
+        "PG_DATABASE": "mydb",
+        "PG_USER": "postgres",
+        "PG_PASSWORD": "yourpassword",
+        "PG_SSH_HOST": "bastion.example.com",
+        "PG_SSH_USER": "ubuntu",
+        "PG_SSH_PRIVATE_KEY": "C:/Users/you/.ssh/id_rsa"
+      }
+    }
+  }
+}
+```
+
+**Via SSH tunnel (password):**
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "node",
+      "args": ["C:/Projetos/mcp-postgres-readonly/dist/index.js"],
+      "env": {
+        "PG_HOST": "localhost",
+        "PG_DATABASE": "mydb",
+        "PG_USER": "postgres",
+        "PG_PASSWORD": "yourpassword",
+        "PG_SSH_HOST": "bastion.example.com",
+        "PG_SSH_USER": "ubuntu",
+        "PG_SSH_PASSWORD": "sshpassword"
+      }
+    }
+  }
+}
+```
+
+> **Tip:** When `PG_SSH_REMOTE_HOST` is omitted, the tunnel forwards to `PG_HOST` as seen from the SSH server. If Postgres runs on a private address only reachable from the bastion (e.g. `db.internal`), set `PG_SSH_REMOTE_HOST=db.internal` and `PG_HOST` to anything (it will be overridden).

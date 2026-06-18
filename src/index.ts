@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { Pool, PoolConfig } from "pg";
 import { validateQuery, SqlGuardError } from "./guard.js";
+import { getTunnelConfig, openTunnel, Tunnel } from "./tunnel.js";
 
 // ---------------------------------------------------------------------------
 // Connection config from environment variables
@@ -37,19 +38,34 @@ function getConfig(): PoolConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Lazy connection pool
+// Pool + optional SSH tunnel (both initialised once at startup)
 // ---------------------------------------------------------------------------
 
 let pool: Pool | null = null;
+let tunnel: Tunnel | null = null;
 
 function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool(getConfig());
-    pool.on("error", (err) =>
-      process.stderr.write(`Pool error: ${err}\n`)
-    );
-  }
+  if (!pool) throw new Error("Pool not initialised — call initPool() first");
   return pool;
+}
+
+async function initPool(): Promise<void> {
+  const cfg = getConfig();
+
+  const tunnelCfg = getTunnelConfig(
+    cfg.host as string,
+    cfg.port as number ?? 5432
+  );
+
+  if (tunnelCfg) {
+    tunnel = await openTunnel(tunnelCfg);
+    // Override host/port to go through the local tunnel end
+    cfg.host = "127.0.0.1";
+    cfg.port = tunnel.localPort;
+  }
+
+  pool = new Pool(cfg);
+  pool.on("error", (err) => process.stderr.write(`Pool error: ${err}\n`));
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +310,7 @@ async function shutdown(signal: string) {
       process.stderr.write(`Pool shutdown error: ${err}\n`)
     );
   }
+  tunnel?.close();
   process.exit(0);
 }
 
@@ -301,6 +318,7 @@ process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
 process.on("SIGINT",  () => { void shutdown("SIGINT"); });
 
 async function main() {
+  await initPool();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("mcp-postgres running on stdio\n");
